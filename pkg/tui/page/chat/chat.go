@@ -249,7 +249,7 @@ func (p *chatPage) Update(msg tea.Msg) (layout.Model, tea.Cmd) {
 		}
 		return p, cmd
 	case *runtime.TokenUsageEvent:
-		p.sidebar.SetTokenUsage(msg.Usage)
+		p.sidebar.SetTokenUsage(msg) // forward full event so sidebar can track per-session usage
 	case *runtime.StreamStoppedEvent:
 		spinnerCmd := p.setWorking(false)
 		cmd := p.messages.AddSeparatorMessage()
