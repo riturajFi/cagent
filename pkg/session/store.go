@@ -167,17 +167,19 @@ func (s *SQLiteSessionStore) GetSession(ctx context.Context, id string) (*Sessio
 	}
 
 	return &Session{
-		ID:              sessionID,
-		Title:           titleStr,
-		Messages:        items,
-		ToolsApproved:   toolsApproved,
-		InputTokens:     inputTokens,
-		OutputTokens:    outputTokens,
-		Cost:            cost,
-		SendUserMessage: sendUserMessage,
-		MaxIterations:   maxIterations,
-		CreatedAt:       createdAt,
-		WorkingDir:      workingDir.String,
+		ID:                        sessionID,
+		Title:                     titleStr,
+		Messages:                  items,
+		ToolsApproved:             toolsApproved,
+		AutoApprovedTools:         make(map[string]bool),
+		AutoApprovedShellCommands: make(map[string]bool),
+		InputTokens:               inputTokens,
+		OutputTokens:              outputTokens,
+		Cost:                      cost,
+		SendUserMessage:           sendUserMessage,
+		MaxIterations:             maxIterations,
+		CreatedAt:                 createdAt,
+		WorkingDir:                workingDir.String,
 	}, nil
 }
 
@@ -254,17 +256,19 @@ func (s *SQLiteSessionStore) GetSessions(ctx context.Context) ([]*Session, error
 		}
 
 		session := &Session{
-			ID:              sessionID,
-			Title:           titleStr,
-			Messages:        items,
-			ToolsApproved:   toolsApproved,
-			InputTokens:     inputTokens,
-			OutputTokens:    outputTokens,
-			Cost:            cost,
-			SendUserMessage: sendUserMessage,
-			MaxIterations:   maxIterations,
-			CreatedAt:       createdAt,
-			WorkingDir:      workingDir.String,
+			ID:                        sessionID,
+			Title:                     titleStr,
+			Messages:                  items,
+			ToolsApproved:             toolsApproved,
+			AutoApprovedTools:         make(map[string]bool),
+			AutoApprovedShellCommands: make(map[string]bool),
+			InputTokens:               inputTokens,
+			OutputTokens:              outputTokens,
+			Cost:                      cost,
+			SendUserMessage:           sendUserMessage,
+			MaxIterations:             maxIterations,
+			CreatedAt:                 createdAt,
+			WorkingDir:                workingDir.String,
 		}
 
 		sessions = append(sessions, session)

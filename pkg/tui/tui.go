@@ -267,6 +267,20 @@ func (a *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case dialog.RuntimeResumeMsg:
+		if sess := a.application.Session(); sess != nil {
+			if msg.ApproveToolName != "" {
+				if sess.AutoApprovedTools == nil {
+					sess.AutoApprovedTools = make(map[string]bool)
+				}
+				sess.AutoApprovedTools[msg.ApproveToolName] = true
+			}
+			if msg.ApproveShellCmd != "" {
+				if sess.AutoApprovedShellCommands == nil {
+					sess.AutoApprovedShellCommands = make(map[string]bool)
+				}
+				sess.AutoApprovedShellCommands[msg.ApproveShellCmd] = true
+			}
+		}
 		a.application.Resume(msg.Response)
 		return a, nil
 

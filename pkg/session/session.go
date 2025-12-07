@@ -55,6 +55,12 @@ type Session struct {
 	// ToolsApproved is a flag to indicate if the tools have been approved
 	ToolsApproved bool `json:"tools_approved"`
 
+	// AutoApprovedTools tracks tool names that have been explicitly auto-approved for this session
+	AutoApprovedTools map[string]bool `json:"auto_approved_tools,omitempty"`
+
+	// AutoApprovedShellCommands tracks shell command prefixes (first token) that have been auto-approved
+	AutoApprovedShellCommands map[string]bool `json:"auto_approved_shell_commands,omitempty"`
+
 	// WorkingDir is the base directory used for filesystem-aware tools
 	WorkingDir string `json:"working_dir,omitempty"`
 
@@ -258,9 +264,11 @@ func New(opts ...Opt) *Session {
 	slog.Debug("Creating new session", "session_id", sessionID)
 
 	s := &Session{
-		ID:              sessionID,
-		CreatedAt:       time.Now(),
-		SendUserMessage: true,
+		ID:                        sessionID,
+		CreatedAt:                 time.Now(),
+		SendUserMessage:           true,
+		AutoApprovedTools:         make(map[string]bool),
+		AutoApprovedShellCommands: make(map[string]bool),
 	}
 
 	for _, opt := range opts {

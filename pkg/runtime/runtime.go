@@ -146,6 +146,48 @@ type streamResult struct {
 
 type Opt func(*LocalRuntime)
 
+// shouldAutoApproveTool returns true if the tool call should skip confirmation
+// based on session-wide approvals or per-tool/per-command approvals.
+func shouldAutoApproveTool(sess *session.Session, tool tools.Tool, toolCall tools.ToolCall) bool {
+	if sess.ToolsApproved {
+		return true
+	}
+
+	if tool.Annotations.ReadOnlyHint {
+		return true
+	}
+
+	if sess.AutoApprovedTools != nil && sess.AutoApprovedTools[toolCall.Function.Name] {
+		return true
+	}
+
+	// Special-case shell: allow approvals by command prefix (first token)
+	if toolCall.Function.Name == builtin.ToolNameShell && sess.AutoApprovedShellCommands != nil {
+		if cmd := extractShellCommand(toolCall.Function.Arguments); cmd != "" && sess.AutoApprovedShellCommands[cmd] {
+			return true
+		}
+	}
+
+	return false
+}
+
+// extractShellCommand extracts the first command token from the shell tool arguments payload.
+func extractShellCommand(arguments string) string {
+	var params struct {
+		Cmd string `json:"cmd"`
+	}
+	if err := json.Unmarshal([]byte(arguments), &params); err != nil {
+		return ""
+	}
+
+	fields := strings.Fields(params.Cmd)
+	if len(fields) == 0 {
+		return ""
+	}
+
+	return fields[0]
+}
+
 func WithCurrentAgent(agentName string) Opt {
 	return func(r *LocalRuntime) {
 		r.currentAgent = agentName
@@ -1004,7 +1046,7 @@ func (r *LocalRuntime) processToolCalls(ctx context.Context, sess *session.Sessi
 		if exists {
 			slog.Debug("Using runtime tool handler", "tool", toolCall.Function.Name, "session_id", sess.ID)
 			// TODO: make this better, these tools define themselves as read-only
-			if sess.ToolsApproved || def.tool.Annotations.ReadOnlyHint {
+			if shouldAutoApproveTool(sess, def.tool, toolCall) {
 				r.runAgentTool(callCtx, def.handler, sess, toolCall, def.tool, events, a)
 			} else {
 				slog.Debug("Tools not approved, waiting for resume", "tool", toolCall.Function.Name, "session_id", sess.ID)
@@ -1048,7 +1090,7 @@ func (r *LocalRuntime) processToolCalls(ctx context.Context, sess *session.Sessi
 			}
 			slog.Debug("Using agent tool handler", "tool", toolCall.Function.Name)
 
-			if sess.ToolsApproved || tool.Annotations.ReadOnlyHint {
+			if shouldAutoApproveTool(sess, tool, toolCall) {
 				slog.Debug("Tools approved, running tool", "tool", toolCall.Function.Name, "session_id", sess.ID)
 				r.runTool(callCtx, tool, toolCall, events, sess, a)
 			} else {
@@ -1316,6 +1358,19 @@ func (r *LocalRuntime) handleTaskTransfer(ctx context.Context, sess *session.Ses
 		session.WithToolsApproved(sess.ToolsApproved),
 		session.WithSendUserMessage(false),
 	)
+
+	if len(sess.AutoApprovedTools) > 0 {
+		s.AutoApprovedTools = make(map[string]bool, len(sess.AutoApprovedTools))
+		for k, v := range sess.AutoApprovedTools {
+			s.AutoApprovedTools[k] = v
+		}
+	}
+	if len(sess.AutoApprovedShellCommands) > 0 {
+		s.AutoApprovedShellCommands = make(map[string]bool, len(sess.AutoApprovedShellCommands))
+		for k, v := range sess.AutoApprovedShellCommands {
+			s.AutoApprovedShellCommands[k] = v
+		}
+	}
 
 	for event := range r.RunStream(ctx, s) {
 		evts <- event

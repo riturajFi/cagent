@@ -125,6 +125,20 @@ func Run(ctx context.Context, out *Printer, cfg Config, rt runtime.Runtime, sess
 				switch result {
 				case ConfirmationApprove:
 					rt.Resume(ctx, runtime.ResumeTypeApprove)
+				case ConfirmationApproveTool:
+					if sess.AutoApprovedTools == nil {
+						sess.AutoApprovedTools = make(map[string]bool)
+					}
+					sess.AutoApprovedTools[e.ToolCall.Function.Name] = true
+					rt.Resume(ctx, runtime.ResumeTypeApprove)
+				case ConfirmationApproveCommand:
+					if cmd := extractShellCommand(e.ToolCall.Function.Arguments); cmd != "" {
+						if sess.AutoApprovedShellCommands == nil {
+							sess.AutoApprovedShellCommands = make(map[string]bool)
+						}
+						sess.AutoApprovedShellCommands[cmd] = true
+					}
+					rt.Resume(ctx, runtime.ResumeTypeApprove)
 				case ConfirmationApproveSession:
 					sess.ToolsApproved = true
 					rt.Resume(ctx, runtime.ResumeTypeApproveSession)
@@ -328,6 +342,22 @@ func createUserMessageWithAttachment(userContent, attachmentPath string) *sessio
 	}
 
 	return session.UserMessage("", multiContent...)
+}
+
+func extractShellCommand(arguments string) string {
+	var payload struct {
+		Cmd string `json:"cmd"`
+	}
+	if err := json.Unmarshal([]byte(arguments), &payload); err != nil {
+		return ""
+	}
+
+	fields := strings.Fields(payload.Cmd)
+	if len(fields) == 0 {
+		return ""
+	}
+
+	return fields[0]
 }
 
 // fileToDataURL converts a file to a data URL

@@ -1,6 +1,8 @@
 package dialog
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -8,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/docker/cagent/pkg/runtime"
+	"github.com/docker/cagent/pkg/tools/builtin"
 	"github.com/docker/cagent/pkg/tui/components/messages"
 	"github.com/docker/cagent/pkg/tui/core"
 	"github.com/docker/cagent/pkg/tui/core/layout"
@@ -18,7 +21,9 @@ import (
 
 type (
 	RuntimeResumeMsg struct {
-		Response runtime.ResumeType
+		Response        runtime.ResumeType
+		ApproveToolName string
+		ApproveShellCmd string
 	}
 )
 
@@ -33,6 +38,7 @@ type toolConfirmationDialog struct {
 	keyMap        toolConfirmationKeyMap
 	sessionState  *service.SessionState
 	scrollView    messages.Model
+	shellCommand  string
 }
 
 // SetSize implements [Dialog].
@@ -59,7 +65,12 @@ func (d *toolConfirmationDialog) SetSize(width, height int) tea.Cmd {
 	question := styles.DialogQuestionStyle.Width(contentWidth).Render("Do you want to allow this tool call?")
 	questionHeight := lipgloss.Height(question)
 
-	options := styles.DialogOptionsStyle.Width(contentWidth).Render("[Y]es    [N]o    [A]ll (approve all tools this session)")
+	optionsText := "[Y]es    [N]o    [T]ool    [A]ll (approve all tools this session)"
+	if d.shellCommand != "" {
+		optionsText = fmt.Sprintf("[Y]es    [N]o    [T]ool    [C]md (%s)    [A]ll (approve all tools this session)", d.shellCommand)
+	}
+
+	options := styles.DialogOptionsStyle.Width(contentWidth).Render(optionsText)
 	optionsHeight := lipgloss.Height(options)
 
 	// Calculate available height for scroll view
@@ -72,9 +83,11 @@ func (d *toolConfirmationDialog) SetSize(width, height int) tea.Cmd {
 
 // toolConfirmationKeyMap defines key bindings for tool confirmation dialog
 type toolConfirmationKeyMap struct {
-	Yes key.Binding
-	No  key.Binding
-	All key.Binding
+	Yes     key.Binding
+	No      key.Binding
+	All     key.Binding
+	Tool    key.Binding
+	Command key.Binding
 }
 
 // defaultToolConfirmationKeyMap returns default key bindings
@@ -87,6 +100,14 @@ func defaultToolConfirmationKeyMap() toolConfirmationKeyMap {
 		No: key.NewBinding(
 			key.WithKeys("n", "N"),
 			key.WithHelp("N", "reject"),
+		),
+		Tool: key.NewBinding(
+			key.WithKeys("t", "T"),
+			key.WithHelp("T", "approve tool"),
+		),
+		Command: key.NewBinding(
+			key.WithKeys("c", "C"),
+			key.WithHelp("C", "approve cmd"),
 		),
 		All: key.NewBinding(
 			key.WithKeys("a", "A"),
@@ -113,6 +134,7 @@ func NewToolConfirmationDialog(msg *runtime.ToolCallConfirmationEvent, sessionSt
 		sessionState: sessionState,
 		keyMap:       defaultToolConfirmationKeyMap(),
 		scrollView:   scrollView,
+		shellCommand: extractShellCommand(msg.ToolCall.Function.Arguments, msg.ToolCall.Function.Name),
 	}
 }
 
@@ -134,6 +156,16 @@ func (d *toolConfirmationDialog) Update(msg tea.Msg) (layout.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, d.keyMap.Yes):
 			return d, tea.Sequence(core.CmdHandler(CloseDialogMsg{}), core.CmdHandler(RuntimeResumeMsg{Response: runtime.ResumeTypeApprove}))
+		case key.Matches(msg, d.keyMap.Tool):
+			return d, tea.Sequence(core.CmdHandler(CloseDialogMsg{}), core.CmdHandler(RuntimeResumeMsg{
+				Response:        runtime.ResumeTypeApprove,
+				ApproveToolName: d.msg.ToolCall.Function.Name,
+			}))
+		case key.Matches(msg, d.keyMap.Command) && d.shellCommand != "":
+			return d, tea.Sequence(core.CmdHandler(CloseDialogMsg{}), core.CmdHandler(RuntimeResumeMsg{
+				Response:        runtime.ResumeTypeApprove,
+				ApproveShellCmd: d.shellCommand,
+			}))
 		case key.Matches(msg, d.keyMap.No):
 			return d, tea.Sequence(core.CmdHandler(CloseDialogMsg{}), core.CmdHandler(RuntimeResumeMsg{Response: runtime.ResumeTypeReject}))
 		case key.Matches(msg, d.keyMap.All):
@@ -214,4 +246,24 @@ func (d *toolConfirmationDialog) Position() (row, col int) {
 	row = max(0, (d.height-dialogHeight)/2)
 	col = max(0, (d.width-dialogWidth)/2)
 	return row, col
+}
+
+func extractShellCommand(arguments, toolName string) string {
+	if toolName != builtin.ToolNameShell {
+		return ""
+	}
+
+	var payload struct {
+		Cmd string `json:"cmd"`
+	}
+	if err := json.Unmarshal([]byte(arguments), &payload); err != nil {
+		return ""
+	}
+
+	fields := strings.Fields(payload.Cmd)
+	if len(fields) == 0 {
+		return ""
+	}
+
+	return fields[0]
 }

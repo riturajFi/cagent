@@ -15,6 +15,7 @@ import (
 
 	"github.com/docker/cagent/pkg/input"
 	"github.com/docker/cagent/pkg/tools"
+	"github.com/docker/cagent/pkg/tools/builtin"
 )
 
 // ConfirmationResult represents the result of a user confirmation prompt
@@ -22,7 +23,9 @@ type ConfirmationResult string
 
 const (
 	ConfirmationApprove        ConfirmationResult = "approve"
+	ConfirmationApproveTool    ConfirmationResult = "approve_tool"
 	ConfirmationApproveSession ConfirmationResult = "approve_session"
+	ConfirmationApproveCommand ConfirmationResult = "approve_command"
 	ConfirmationReject         ConfirmationResult = "reject"
 	ConfirmationAbort          ConfirmationResult = "abort"
 )
@@ -75,7 +78,18 @@ func (p *Printer) PrintToolCall(toolCall tools.ToolCall) {
 func (p *Printer) PrintToolCallWithConfirmation(ctx context.Context, toolCall tools.ToolCall, rd io.Reader) ConfirmationResult {
 	p.Printf("\n%s\n", bold("🛠️ Tool call requires confirmation 🛠️"))
 	p.PrintToolCall(toolCall)
-	p.Printf("\n%s", bold("Can I run this tool? ([y]es/[a]ll/[n]o): "))
+
+	shellCmd := ""
+	if toolCall.Function.Name == builtin.ToolNameShell {
+		shellCmd = extractShellCommand(toolCall.Function.Arguments)
+	}
+
+	options := "Can I run this tool? ([y]es"
+	if shellCmd != "" {
+		options += "/[c]md"
+	}
+	options += "/[t]ool/[a]ll/[n]o): "
+	p.Printf("\n%s", bold(options))
 
 	if !isatty.IsTerminal(os.Stdout.Fd()) {
 		return ConfirmationReject
@@ -98,6 +112,14 @@ func (p *Printer) PrintToolCallWithConfirmation(ctx context.Context, toolCall to
 			case 'y', 'Y':
 				p.Print(bold("Yes 👍"))
 				return ConfirmationApprove
+			case 't', 'T':
+				p.Print(bold("Yes for this tool 👍"))
+				return ConfirmationApproveTool
+			case 'c', 'C':
+				if shellCmd != "" {
+					p.Print(bold("Yes for this command 👍"))
+					return ConfirmationApproveCommand
+				}
 			case 'a', 'A':
 				p.Print(bold("Yes to all 👍"))
 				return ConfirmationApproveSession
@@ -123,6 +145,12 @@ func (p *Printer) PrintToolCallWithConfirmation(ctx context.Context, toolCall to
 	switch text {
 	case "y":
 		return ConfirmationApprove
+	case "t":
+		return ConfirmationApproveTool
+	case "c":
+		if shellCmd != "" {
+			return ConfirmationApproveCommand
+		}
 	case "a":
 		return ConfirmationApproveSession
 	case "n":
@@ -336,4 +364,20 @@ func formatJSONValue(key string, value any) string {
 		jsonBytes, _ := json.Marshal(v)
 		return fmt.Sprintf("%s: %s", bold(key), string(jsonBytes))
 	}
+}
+
+func extractShellCommand(arguments string) string {
+	var payload struct {
+		Cmd string `json:"cmd"`
+	}
+	if err := json.Unmarshal([]byte(arguments), &payload); err != nil {
+		return ""
+	}
+
+	fields := strings.Fields(payload.Cmd)
+	if len(fields) == 0 {
+		return ""
+	}
+
+	return fields[0]
 }
